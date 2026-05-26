@@ -49,7 +49,7 @@ mp_pose = mp.solutions.pose.Pose(model_complexity=1)
 mp_drawing = mp.solutions.drawing_utils
 
 # IP Webcam 주소 입력 (본인 스마트폰 화면의 IPv4 주소로 변경)
-video_path = 'http://192.168.0.241:8080/video' 
+video_path = 'http://192.168.0.248:8080/video'  # 401 = 192.168.0.241:8080, 501 = 192.168.0.248:8080
 
 zones = {}
 state_logs = []
