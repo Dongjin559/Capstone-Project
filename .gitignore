@@ -1,0 +1,6 @@
+venv/
+venv_capstone/
+__pycache__/
+*.json
+*.pt
+*.mp4
