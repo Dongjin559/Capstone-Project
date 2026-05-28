@@ -16,8 +16,19 @@
 ## 📂 프로젝트 구조
 ```text
 Capstone-Project/
-├── homecam_live.py    # [핵심] 컴퓨터 비전 기반 실시간 활동 추적 코드(라이브)
-├── analyze_log.py     # [핵심] 수집된 활동 로그 데이터 가공 및 분석 엔진
-├── requirements.txt   # 의존성 라이브러리 목록
-├── README.md          # 프로젝트 설명 문서
-└── .gitignore         # 가상환경 및 불필요 파일 제외 설정
+├── aa/                           # (추가적인 데이터 또는 설정 폴더)
+├── .gitignore                    # Git 버전 관리 제외 파일 설정
+├── README.md                     # 프로젝트 설명서
+├── analyze_log_gemini.py         # Gemini API를 활용한 라이프스타일 로그 분석
+├── analyze_log_gpt.py            # GPT API를 활용한 라이프스타일 로그 분석
+├── analyze_log_ollama.py         # Ollama(로컬 LLM)를 활용한 라이프스타일 로그 분석
+├── dashboard.png                 # 시스템 분석 결과 대시보드 스크린샷
+├── homecam.py                    # 홈캠 기반 신체 활동 추적 비전 시스템
+├── homecam_live.py               # 홈캠 실시간 영상 처리 및 활동 로깅
+├── laptop_logger.py              # PC(노트북) 기기 사용 시간 및 활동 기록 수집기
+├── merge_logs.py                 # 다중 소스(모바일, PC, 홈캠) 로그 데이터 병합 처리
+├── mobile_server.py              # 안드로이드 앱과 통신하여 모바일 로그를 수신하는 서버
+├── plot_summary_log.py           # 분석된 라이프스타일 요약 데이터 그래프 생성
+├── requirements.txt              # 파이썬 실행을 위한 필수 라이브러리 목록
+├── run_system.py                 # 통합 시스템 전체 실행 진입점 (Main)
+└── visualize_logs.py             # 수집/병합된 로그 데이터 시각화 도구
