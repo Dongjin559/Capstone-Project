@@ -1,38 +1,39 @@
 # 거주 공간 내 활동 패턴 분석 시스템
 
-본 프로젝트는 컴퓨터 비전 기술을 활용하여 사용자의 일상 활동을 실시간으로 추적하고, 이를 디지털 로그와 통합하여 종합적인 라이프스타일 분석을 제공하는 시스템입니다.
+본 프로젝트는 컴퓨터 비전 기술을 활용하여 사용자의 일상 활동을 실시간으로 추적하고, 이를 모바일 및 PC의 디지털 기기 사용 로그와 통합하여 종합적인 라이프스타일 분석 리포트를 제공하는 시스템입니다.
 
 ## 주요 기능
-- **실시간 활동 추적:** MediaPipe와 YOLOv8을 활용하여 사용자의 물리적 자세 및 동작(앉음, 서있음, 보행 등)을 실시간으로 인식합니다.
-- **라이프스타일 로그 통합:** 비전 데이터와 디지털 사용 로그를 매칭하여 사용자의 일일 활동 패턴을 데이터화합니다.
-- **데이터 시각화 및 분석:** 수집된 데이터를 바탕으로 활동성 분석 및 개선 방향을 제시하는 요약 보고서를 제공합니다.
+- **실시간 활동 추적:** MediaPipe와 YOLOv8을 활용하여 사용자의 물리적 자세(앉음, 서있음, 누움 등) 및 특정 구역 체류 시간을 실시간으로 인식합니다.
+- **크로스 플랫폼 로그 통합:** 비전 데이터(카메라), PC 앱 사용 기록(윈도우 로거), 모바일 앱 사용 기록(안드로이드 통신)을 초 단위로 동기화하여 병합합니다.
+- **비동기 시각화 및 AI 분석:** 수집된 데이터를 바탕으로 라이프스타일 대시보드(파이/바 차트)를 화면에 띄움과 동시에, 백그라운드에서 로컬 LLM이 즉각적인 행동 분석 코멘트를 생성하여 제공합니다.
 
 ## 기술 스택
 - **언어:** Python, Java, Kotlin
-- **AI/ML:** YOLOv8, MediaPipe (Human Pose Estimation)
+- **AI/Vision:** YOLOv8, MediaPipe (Human Pose Estimation)
+- **LLM:** Ollama(Local Ai)
 - **Mobile:** Android (Jetpack Compose)
 - **개발 환경:** Git, GitHub, VS Code
 
 ## 프로젝트 구조
 ```text
 Capstone-Project/
-├── aa/                           # (추가적인 데이터 또는 설정 폴더)
-├── .gitignore                    # Git 버전 관리 제외 파일 설정
 ├── README.md                     # 프로젝트 설명서
-├── analyze_log_gemini.py         # Gemini API를 활용한 라이프스타일 로그 분석
-├── analyze_log_gpt.py            # GPT API를 활용한 라이프스타일 로그 분석
-├── analyze_log_ollama.py         # Ollama(로컬 LLM)를 활용한 라이프스타일 로그 분석
-├── dashboard.png                 # 시스템 분석 결과 대시보드 스크린샷
-├── homecam.py                    # 홈캠 기반 신체 활동 추적 비전 시스템
-├── homecam_live.py               # 홈캠 실시간 영상 처리 및 활동 로깅
-├── laptop_logger.py              # PC(노트북) 기기 사용 시간 및 활동 기록 수집기
-├── merge_logs.py                 # 다중 소스(모바일, PC, 홈캠) 로그 데이터 병합 처리
-├── mobile_server.py              # 안드로이드 앱과 통신하여 모바일 로그를 수신하는 서버
-├── plot_summary_log.py           # 분석된 라이프스타일 요약 데이터 그래프 생성
 ├── requirements.txt              # 파이썬 실행을 위한 필수 라이브러리 목록
-├── run_system.py                 # 통합 시스템 전체 실행 진입점 (Main)
-└── visualize_logs.py             # 수집/병합된 로그 데이터 시각화 도구
-```
+├── run_system.py                 # 통합 시스템 전체 실행 진입점 (Main 오케스트라)
+├── src/                          # 핵심 구동 스크립트 폴더
+│   ├── analyze_log_gemini.py     # Gemini API 활용 로그 분석
+│   ├── analyze_log_gpt.py        # GPT API 활용 로그 분석
+│   ├── analyze_log_ollama.py     # Ollama(로컬 AI) 활용 라이프스타일 종합 분석
+│   ├── homecam_live.py           # 홈캠 실시간 영상 처리, 자세 추적 및 로깅 방어 코드
+│   ├── laptop_logger.py          # PC 사용 시간 및 포그라운드/백그라운드 활동 기록기
+│   ├── merge_logs.py             # 다중 소스(모바일, PC, 홈캠) 데이터 시간대별 병합 처리
+│   ├── mobile_server.py          # 안드로이드 앱 통신 및 모바일 로그 수신용 Flask 서버
+│   └── visualize_logs.py         # 병합된 로그 기반 3분할 통합 대시보드 시각화 도구
+├── data/                         # 동적 데이터 및 결과물 저장 폴더 (초기화 및 자동 생성)
+│   ├── *_log.json                # 실시간 수집 및 병합된 각종 JSON 로그 파일
+│   └── dashboard.png             # 최종 생성된 분석 대시보드 스크린샷 이미지
+└── models/                       # AI 모델 파일 폴더
+    └── yolov8n.pt                # YOLOv8 객체 인식 모델 파일
 
 ## 시스템 동작 흐름 (System Pipeline)
 
@@ -41,30 +42,21 @@ Capstone-Project/
 ```mermaid
 graph TD
     subgraph 1. Data Collection
-    A[Mobile App] -->|App Usage Data| D(mobile_server.py)
-    B[PC / Laptop] -->|Active Window Logs| E(laptop_logger.py)
-    C[Home Camera] -->|Vision & Pose Data| F(homecam_live.py)
+    A[Mobile App] -->|App Usage Data| D(src/mobile_server.py)
+    B[PC / Laptop] -->|Active Window Logs| E(src/laptop_logger.py)
+    C[Home Camera] -->|Vision & Pose Data| F(src/homecam_live.py)
     end
 
     subgraph 2. Data Integration
-    D --> G{merge_logs.py}
-    E --> G
-    F --> G
+    D -->|mobile_log.json| G{src/merge_logs.py}
+    E -->|laptop_log.json| G
+    F -->|state_log.json| G
     end
 
-    subgraph 3. AI Analysis
-    G -->|final_log.json| H[LLM Analysis]
-    H --> I(analyze_log_gpt.py)
-    H --> J(analyze_log_gemini.py)
-    H --> K(analyze_log_ollama.py)
-    end
-
-    subgraph 4. Visualization & Feedback
-    I --> L[Data Visualization]
-    J --> L
-    K --> L
-    L --> M(visualize_logs.py)
-    L --> N(plot_summary_log.py)
-    M --> O((Final Dashboard))
-    N --> O
+    subgraph 3. Visualization & AI Analysis
+    G -->|data/final_log.json| H[Asynchronous Processing]
+    H --> I(src/visualize_logs.py)
+    H --> J(src/analyze_log_ollama.py)
+    I --> K((Dashboard UI & PNG))
+    J --> L((AI Feedback Report))
     end
