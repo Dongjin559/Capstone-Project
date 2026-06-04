@@ -1,5 +1,6 @@
 import json
 from openai import OpenAI
+import re # 코드 맨 위쪽에 추가
 
 # 1. Ollama 연결 설정 (API 키는 로컬이므로 아무 값이나 넣어도 무관함)
 client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
@@ -32,7 +33,7 @@ for package, readable_name in app_mapping.items():
     json_str = json_str.replace(package, readable_name)
     
 # 프롬프트에 넣을 때는 변환된 json_str을 사용
-
+json_str = re.sub(r'C:\\[^\s\)]+', '', json_str)
 # 3. 프롬프트 세팅
 # 🔥 변경점 1: '따뜻한 코치'에서 '엄격한 팩트 폭격 코치'로 페르소나 변경
 prompt = f"""
@@ -49,6 +50,7 @@ prompt = f"""
 7. 기기 구분 명확화 (매우 중요): '안드로이드 스튜디오', 'python', 'chrome', 'VS Code' 그리고 관련된 웹사이트 제목이나 유튜브 영상 제목은 무조건 [PC 활동]입니다. 이를 [모바일 활동] 쪽에 절대 섞어 쓰지 마세요.
 8. 인사이트 도출: 단순히 "앉아서 개발했다"로 끝내지 말고, "장시간 앉아 계셨으니 가벼운 스트레칭을 추천합니다" 등 건강/생산성 관점의 조언(Insight)을 덧붙이세요.
 9. 내용 중복 및 어색한 인사 금지: 코멘트 마지막 문장은 반드시 토씨 하나 틀리지 말고 "오늘 하루도 수고 많으셨습니다. 푹 쉬세요." 라고만 출력하세요. 다른 인사말이나 외국어는 절대 금지합니다.
+
 
 [필수 작성 형식]
 ==================================================

@@ -8,7 +8,7 @@ import mediapipe as mp
 import matplotlib.pyplot as plt
 import threading
 
-# --- 실시간 딜레이 제거를 위한 백그라운드 프레임 읽기 클래스 ---
+# --- 딜레이 제거 멀티 스레딩---
 class VideoCaptureThreading:
     def __init__(self, src):
         self.cap = cv2.VideoCapture(src)
