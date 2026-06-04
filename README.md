@@ -17,6 +17,7 @@
 ## 프로젝트 구조
 ```text
 Capstone-Project/
+├── MobileLog/                    # 모바일 로그 (안드로이드 스튜디오)
 ├── README.md                     # 프로젝트 설명서
 ├── requirements.txt              # 파이썬 실행을 위한 필수 라이브러리 목록
 ├── run_system.py                 # 통합 시스템 전체 실행 진입점 (Main 오케스트라)
