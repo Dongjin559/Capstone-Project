@@ -34,6 +34,7 @@ Capstone-Project/
 │   └── dashboard.png             # 최종 생성된 분석 대시보드 스크린샷 이미지
 └── models/                       # AI 모델 파일 폴더
     └── yolov8n.pt                # YOLOv8 객체 인식 모델 파일
+```
 
 ## 시스템 동작 흐름 (System Pipeline)
 
@@ -41,22 +42,23 @@ Capstone-Project/
 
 ```mermaid
 graph TD
-    subgraph 1. Data Collection
+    subgraph Step1 ["1. Data Collection"]
     A[Mobile App] -->|App Usage Data| D(src/mobile_server.py)
     B[PC / Laptop] -->|Active Window Logs| E(src/laptop_logger.py)
     C[Home Camera] -->|Vision & Pose Data| F(src/homecam_live.py)
     end
 
-    subgraph 2. Data Integration
+    subgraph Step2 ["2. Data Integration"]
     D -->|mobile_log.json| G{src/merge_logs.py}
     E -->|laptop_log.json| G
     F -->|state_log.json| G
     end
 
-    subgraph 3. Visualization & AI Analysis
+    subgraph Step3 ["3. Visualization & AI Analysis"]
     G -->|data/final_log.json| H[Asynchronous Processing]
     H --> I(src/visualize_logs.py)
     H --> J(src/analyze_log_ollama.py)
     I --> K((Dashboard UI & PNG))
     J --> L((AI Feedback Report))
     end
+```
