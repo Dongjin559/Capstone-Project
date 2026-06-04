@@ -17,6 +17,7 @@
 ## 프로젝트 구조
 ```text
 Capstone-Project/
+├── MobileLog/                    # 모바일 로그 (안드로이드 스튜디오)
 ├── README.md                     # 프로젝트 설명서
 ├── requirements.txt              # 파이썬 실행을 위한 필수 라이브러리 목록
 ├── run_system.py                 # 통합 시스템 전체 실행 진입점 (Main 오케스트라)
@@ -34,6 +35,7 @@ Capstone-Project/
 │   └── dashboard.png             # 최종 생성된 분석 대시보드 스크린샷 이미지
 └── models/                       # AI 모델 파일 폴더
     └── yolov8n.pt                # YOLOv8 객체 인식 모델 파일
+```
 
 ## 시스템 동작 흐름 (System Pipeline)
 
@@ -41,22 +43,23 @@ Capstone-Project/
 
 ```mermaid
 graph TD
-    subgraph 1. Data Collection
+    subgraph Step1 ["1. Data Collection"]
     A[Mobile App] -->|App Usage Data| D(src/mobile_server.py)
     B[PC / Laptop] -->|Active Window Logs| E(src/laptop_logger.py)
     C[Home Camera] -->|Vision & Pose Data| F(src/homecam_live.py)
     end
 
-    subgraph 2. Data Integration
+    subgraph Step2 ["2. Data Integration"]
     D -->|mobile_log.json| G{src/merge_logs.py}
     E -->|laptop_log.json| G
     F -->|state_log.json| G
     end
 
-    subgraph 3. Visualization & AI Analysis
+    subgraph Step3 ["3. Visualization & AI Analysis"]
     G -->|data/final_log.json| H[Asynchronous Processing]
     H --> I(src/visualize_logs.py)
     H --> J(src/analyze_log_ollama.py)
     I --> K((Dashboard UI & PNG))
     J --> L((AI Feedback Report))
     end
+```
