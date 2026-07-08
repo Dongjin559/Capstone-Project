@@ -6,6 +6,7 @@ import numpy as np
 import datetime
 from ultralytics import YOLO
 import mediapipe as mp
+from mediapipe.framework.formats import landmark_pb2
 import threading
 
 # --- 입력 소스 및 해상도 설정 ---
@@ -84,6 +85,7 @@ class TrackerManager:
             "start_time_str": datetime.datetime.now().strftime("%H:%M:%S"),
             "candidate_activity": raw_posture,
             "candidate_start_time": current_sec,
+            "candidate_streak": 1,
             "summary": {"SITTING": 0.0, "LYING": 0.0, "STANDING": 0.0, "UNKNOWN": 0.0},
             "transition_count": 0,
             "last_seen": current_sec,
@@ -96,12 +98,21 @@ class TrackerManager:
             self.trackers[master_id] = tracker
         tracker["last_seen"] = current_sec
 
-        if raw_posture != tracker["candidate_activity"]:
+        if raw_posture == "UNKNOWN":
+            tracker["candidate_streak"] = 0
+        elif raw_posture != tracker["candidate_activity"]:
             tracker["candidate_activity"] = raw_posture
             tracker["candidate_start_time"] = current_sec
+            tracker["candidate_streak"] = 1
+        else:
+            tracker["candidate_streak"] = tracker.get("candidate_streak", 0) + 1
 
         confirmed_posture = tracker["current_activity"]
-        if current_sec - tracker["candidate_start_time"] >= self.transition_threshold:
+        if (
+            raw_posture != "UNKNOWN"
+            and tracker["candidate_streak"] >= 2
+            and current_sec - tracker["candidate_start_time"] >= self.transition_threshold
+        ):
             confirmed_posture = tracker["candidate_activity"]
 
         if confirmed_posture != tracker["current_activity"] or current_zone != tracker["current_zone"]:
@@ -224,17 +235,18 @@ def has_skeleton_in_bbox(pose_landmarks, bbox, width, height):
         return False
 
     x1, y1, x2, y2 = bbox
+    visible_points = 0
     for joint_idx in [0, 2, 5, 11, 12, 23, 24]:
         landmark = pose_landmarks.landmark[joint_idx]
-        if landmark.visibility <= 0.3:
+        if landmark.visibility <= 0.2:
             continue
 
         px = int(landmark.x * width)
         py = int(landmark.y * height)
         if x1 <= px <= x2 and y1 <= py <= y2:
-            return True
+            visible_points += 1
 
-    return False
+    return visible_points >= 2
 
 
 def classify_posture(pose_landmarks, bbox):
@@ -260,8 +272,20 @@ def classify_posture(pose_landmarks, bbox):
     if is_box_lying or is_landmark_lying:
         return "LYING"
 
-    if abs(lm[25].y - lm[23].y) < abs(lm[23].y - lm[11].y) * 0.7:
-        return "SITTING"
+    shoulder_y = (lm[11].y + lm[12].y) / 2.0 if lm[11].visibility > 0.3 and lm[12].visibility > 0.3 else lm[11].y
+    hip_y = (lm[23].y + lm[24].y) / 2.0 if lm[23].visibility > 0.3 and lm[24].visibility > 0.3 else lm[23].y
+    torso_height = max(0.001, abs(shoulder_y - hip_y))
+
+    knee_positions = []
+    for knee_idx in (25, 26):
+        if lm[knee_idx].visibility > 0.3:
+            knee_positions.append(lm[knee_idx].y)
+
+    if len(knee_positions) == 2:
+        knee_span = abs(knee_positions[0] - knee_positions[1])
+        knee_to_hip = max(abs(knee_positions[0] - hip_y), abs(knee_positions[1] - hip_y))
+        if knee_span < torso_height * 0.35 and knee_to_hip < torso_height * 0.45:
+            return "SITTING"
 
     return "STANDING"
 
@@ -305,14 +329,69 @@ def save_logs(state_logs, transition_logs, summary_logs):
         json.dump(summary_logs, f, indent=4, ensure_ascii=False)
 
 
+def get_pose_landmarks_in_bbox(frame, bbox, pose_model, prev_landmarks=None):
+    x1, y1, x2, y2 = bbox
+    pad_x = max(20, int((x2 - x1) * 0.25))
+    pad_y = max(20, int((y2 - y1) * 0.35))
+    x1i = max(0, int(x1) - pad_x)
+    y1i = max(0, int(y1) - pad_y)
+    x2i = min(frame.shape[1], int(x2) + pad_x)
+    y2i = min(frame.shape[0], int(y2) + pad_y)
+
+    roi = frame[y1i:y2i, x1i:x2i]
+    if roi.size == 0:
+        return prev_landmarks
+
+    rgb_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
+    pose_result = pose_model.process(rgb_roi)
+    if not pose_result.pose_landmarks:
+        return prev_landmarks
+
+    roi_w = roi.shape[1]
+    roi_h = roi.shape[0]
+    landmark_list = landmark_pb2.NormalizedLandmarkList()
+    for idx, landmark in enumerate(pose_result.pose_landmarks.landmark):
+        new_landmark = landmark_pb2.NormalizedLandmark()
+        visibility = landmark.visibility if landmark.visibility is not None else 0.0
+
+        if visibility < 0.2:
+            if prev_landmarks is not None and idx < len(prev_landmarks.landmark):
+                prev_landmark = prev_landmarks.landmark[idx]
+                new_landmark.x = prev_landmark.x
+                new_landmark.y = prev_landmark.y
+            new_landmark.visibility = 0.0
+            landmark_list.landmark.append(new_landmark)
+            continue
+
+        new_x = (x1i + landmark.x * roi_w) / frame.shape[1]
+        new_y = (y1i + landmark.y * roi_h) / frame.shape[0]
+        if prev_landmarks is not None and idx < len(prev_landmarks.landmark):
+            prev_landmark = prev_landmarks.landmark[idx]
+            new_x = 0.7 * prev_landmark.x + 0.3 * new_x
+            new_y = 0.7 * prev_landmark.y + 0.3 * new_y
+
+        new_landmark.x = new_x
+        new_landmark.y = new_y
+        new_landmark.visibility = visibility
+        landmark_list.landmark.append(new_landmark)
+
+    return landmark_list
+
+
 def main():
     model = YOLO("models/yolov8n.pt")
-    mp_pose = mp.solutions.pose.Pose(model_complexity=1)
+    mp_pose = mp.solutions.pose.Pose(
+        static_image_mode=False,
+        model_complexity=1,
+        min_detection_confidence=0.6,
+        min_tracking_confidence=0.6
+    )
     mp_drawing = mp.solutions.drawing_utils
 
     zone_manager = ZoneManager()
     tracker_manager = TrackerManager(transition_threshold=1.0)
     id_mapping = {}
+    prev_pose_cache = {}
 
     cap = VideoCaptureThreading(video_path)
     if not cap.isOpened():
@@ -341,27 +420,35 @@ def main():
 
         frame = cv2.resize(frame, (TARGET_WIDTH, TARGET_HEIGHT))
         yolo_res = model.track(frame, persist=True, verbose=False, classes=0, conf=0.4, iou=0.3)[0]
-        pose_res = mp_pose.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         annotated = yolo_res.plot()
         current_sec = time.time() - start_time_real
-
-        if pose_res.pose_landmarks:
-            mp_drawing.draw_landmarks(annotated, pose_res.pose_landmarks, mp.solutions.pose.POSE_CONNECTIONS)
 
         if yolo_res.boxes.id is not None:
             boxes = yolo_res.boxes.xyxy.cpu().numpy()
             ids = yolo_res.boxes.id.cpu().numpy().astype(int)
             for (x1, y1, x2, y2), detection_id in zip(boxes, ids):
                 bbox = (x1, y1, x2, y2)
-                if not has_skeleton_in_bbox(pose_res.pose_landmarks, bbox, TARGET_WIDTH, TARGET_HEIGHT):
+                cache_key = int(detection_id)
+                prev_pose = prev_pose_cache.get(cache_key)
+                person_pose = get_pose_landmarks_in_bbox(frame, bbox, mp_pose, prev_pose)
+                if person_pose is None:
                     continue
+
+                prev_pose_cache[cache_key] = person_pose
+
+                if has_skeleton_in_bbox(person_pose, bbox, TARGET_WIDTH, TARGET_HEIGHT):
+                    mp_drawing.draw_landmarks(
+                        annotated,
+                        person_pose,
+                        mp.solutions.pose.POSE_CONNECTIONS,
+                    )
 
                 master_id = id_mapping.get(int(detection_id))
                 if master_id is None:
                     master_id = tracker_manager.assign_ids(int(detection_id), current_sec)
                     id_mapping[int(detection_id)] = master_id
 
-                raw_posture = classify_posture(pose_res.pose_landmarks, bbox)
+                raw_posture = classify_posture(person_pose, bbox)
                 feet_pos = (int((x1 + x2) / 2), int(y2))
                 current_zone = zone_manager.find_zone(feet_pos)
 
