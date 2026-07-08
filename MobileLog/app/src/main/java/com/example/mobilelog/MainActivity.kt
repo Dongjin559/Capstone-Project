@@ -239,7 +239,7 @@ class MainActivity : ComponentActivity() {
     private fun sendLogToServer(jsonString: String) {
         try {
             // 💡 중요: 10.0.2.2는 안드로이드 에뮬레이터가 '내 노트북'을 부르는 특수 IP 주소입니다!
-            val url = URL("http://10.0.2.2:5000/upload_mobile_log")
+            val url = URL("http://192.168.0.229:5000/upload_mobile_log")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8")

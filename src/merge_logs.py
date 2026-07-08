@@ -26,15 +26,13 @@ def str_to_time(time_str):
         return None
 
 # ==========================================
-# 2. 랩탑 최신 요약본(final_summary) 구출 및 복구
+# 2. 랩탑 최신 요약본(final_summary) 
 # ==========================================
 for lap_log in reversed(laptop_logs):
     if lap_log.get("trigger") == "final_summary":
         laptop_final_summary = lap_log
         break
 
-# 🔥 [철벽 방어] 만약 찰나의 딜레이로 요약본이 저장 안 됐다면? 
-# 가장 마지막 실시간 기록을 바탕으로 시스템이 즉석에서 요약본을 복구해 냅니다!
 if not laptop_final_summary:
     for lap_log in reversed(laptop_logs):
         if "app_accumulated_durations_sec" in lap_log:
