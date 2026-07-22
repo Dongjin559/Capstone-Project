@@ -696,6 +696,13 @@ class HomeCamAnalyzer:
         return posture_changes >= self.config.squat_min_transitions
 
     def _classify_exercise(self, master_id: int, person_pose: Any, raw_posture: str, current_sec: float, posture_stable: bool) -> str:
+        # Do not treat seated movements (including arm movement) as exercise.
+        # Clear the motion buffer so activity accumulated while sitting cannot
+        # immediately be classified as exercise after standing up.
+        if raw_posture == "SITTING":
+            self.motion_history.pop(master_id, None)
+            return "IDLE"
+
         if self._has_squat_pattern(master_id):
             return "SQUAT"
         if not posture_stable:
