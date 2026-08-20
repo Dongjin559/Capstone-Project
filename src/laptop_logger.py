@@ -1,170 +1,199 @@
-import time
+import atexit
 import json
-import os
+import signal
+import time
+from pathlib import Path
+
+import psutil
 import win32gui
 import win32process
-import psutil
 
-# 🔥 수정됨: JSON 파일이 data 폴더 안에 저장되도록 경로 변경
-LOG_FILE = "data/laptop_log.json"
+
+LOG_DIR = Path(__file__).resolve().parents[1] / "data" / "laptop_log"
+LOG_SAVE_INTERVAL_SEC = 30.0
 
 app_duration_tracker = {}
-last_checked_time = None
+
 
 def get_active_window_info():
-    """현재 활성 창의 프로세스 이름과 창 제목을 가져옵니다."""
     hwnd = win32gui.GetForegroundWindow()
     try:
         _, pid = win32process.GetWindowThreadProcessId(hwnd)
         process = psutil.Process(pid)
-        app_name = process.name().replace('.exe', '').lower()
-        
-        if app_name in ["explorer", "applicationframehost", "systemsettings", "searchhost"]:
+        app_name = process.name().removesuffix(".exe").lower()
+        if app_name in {"explorer", "applicationframehost", "systemsettings", "searchhost"}:
             return "idle", ""
-            
-        window_title = win32gui.GetWindowText(hwnd)
-        return app_name, window_title
+        return app_name, win32gui.GetWindowText(hwnd)
     except Exception:
         return "unknown", ""
 
-def get_background_windows(foreground_app):
-    """백그라운드 창들의 목록을 가져옵니다."""
-    bg_apps = []
-    def enum_window_callback(hwnd, extra):
-        if win32gui.IsWindowVisible(hwnd):
-            title = win32gui.GetWindowText(hwnd)
-            if title:
-                try:
-                    _, pid = win32process.GetWindowThreadProcessId(hwnd)
-                    process = psutil.Process(pid)
-                    app_name = process.name().replace('.exe', '').lower()
-                    
-                    if app_name != foreground_app and app_name not in [app for app, _ in bg_apps]:
-                        if app_name not in ["explorer", "systemsettings", "unknown", "applicationframehost"]:
-                            bg_apps.append((app_name, title))
-                except Exception:
-                    pass
-    win32gui.EnumWindows(enum_window_callback, None)
-    return [f"{app} ({title})" for app, title in bg_apps]
 
-def load_existing_logs():
-    if os.path.exists(LOG_FILE):
-        with open(LOG_FILE, 'r', encoding='utf-8') as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return []
-    return []
+def get_background_windows(foreground_app):
+    background_apps = []
+    seen_apps = set()
+
+    def enum_window_callback(hwnd, extra):
+        if not win32gui.IsWindowVisible(hwnd):
+            return
+        title = win32gui.GetWindowText(hwnd)
+        if not title:
+            return
+        try:
+            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            app_name = psutil.Process(pid).name().removesuffix(".exe").lower()
+            ignored = {foreground_app, "explorer", "systemsettings", "unknown", "applicationframehost"}
+            if app_name not in ignored and app_name not in seen_apps:
+                seen_apps.add(app_name)
+                background_apps.append(f"{app_name} ({title})")
+        except Exception:
+            pass
+
+    win32gui.EnumWindows(enum_window_callback, None)
+    return background_apps
+
 
 def convert_seconds_to_readable(seconds):
-    """초 단위의 시간을 'X시간 Y분 Z초' 형태로 변환합니다."""
     seconds = int(seconds)
-    h = seconds // 3600
-    m = (seconds % 3600) // 60
-    s = seconds % 60
-    
-    result = []
-    if h > 0: result.append(f"{h}시간")
-    if m > 0: result.append(f"{m}분")
-    result.append(f"{s}초")
-    return " ".join(result)
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    remaining_seconds = seconds % 60
+    parts = []
+    if hours:
+        parts.append(f"{hours}시간")
+    if minutes:
+        parts.append(f"{minutes}분")
+    parts.append(f"{remaining_seconds}초")
+    return " ".join(parts)
 
-def record_final_summary(start_time):
-    """프로그램 종료 시 총 세션 시간과 앱별 최종 누적 시간을 기록합니다."""
-    current_timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+def _next_log_path(filename, timestamp):
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    path = LOG_DIR / f"{filename}_{timestamp}.json"
+    number = 2
+    while path.exists():
+        path = LOG_DIR / f"{filename}_{timestamp}_{number}.json"
+        number += 1
+    return path
+
+
+def save_json_snapshot(filename, data, timestamp):
+    path = _next_log_path(filename, timestamp)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with temp_path.open("w", encoding="utf-8") as file:
+            json.dump(data, file, indent=4, ensure_ascii=False)
+            file.flush()
+        temp_path.replace(path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+
+def build_summary(start_time, in_progress):
     total_session_seconds = int(time.time() - start_time)
-    
-    # 정수형 초 데이터와 읽기 좋은 문자열 데이터 매핑
-    raw_durations = {k: int(v) for k, v in app_duration_tracker.items()}
-    readable_durations = {k: convert_seconds_to_readable(v) for k, v in app_duration_tracker.items()}
-    
-    summary_entry = {
-        "timestamp": current_timestamp,
-        "trigger": "final_summary",  # 최종 요약 데이터임을 명시
+    raw_durations = {key: int(value) for key, value in app_duration_tracker.items()}
+    summary = {
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "trigger": "periodic_summary" if in_progress else "final_summary",
         "source": "laptop",
         "total_monitoring_time": convert_seconds_to_readable(total_session_seconds),
         "total_monitoring_seconds": total_session_seconds,
         "final_accumulated_durations_sec": raw_durations,
-        "final_accumulated_durations_readable": readable_durations
+        "final_accumulated_durations_readable": {
+            key: convert_seconds_to_readable(value) for key, value in app_duration_tracker.items()
+        },
     }
-    
-    logs = load_existing_logs()
-    logs.append(summary_entry)
-    with open(LOG_FILE, 'w', encoding='utf-8') as f:
-        json.dump(logs, f, indent=4, ensure_ascii=False)
-        
-    print("\n" + "="*50)
-    print("📋 [최종 분석 리포트 생성 완료]")
-    print(f"총 모니터링 시간: {summary_entry['total_monitoring_time']}")
-    print("-"*50)
-    for app, t_str in readable_durations.items():
-        print(f"• {app}: {t_str}")
-    print("="*50)
+    if in_progress:
+        summary["in_progress"] = True
+    return summary
+
+
+def save_logs(pending_logs, start_time, in_progress=True):
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    save_json_snapshot("laptop_usage_log", list(pending_logs), timestamp)
+    save_json_snapshot("laptop_summary_log", [build_summary(start_time, in_progress)], timestamp)
+
 
 def log_laptop_usage():
-    global last_checked_time
-    
-    print("노트북 실시간 감시 시작... (종료 시 최종 리포트가 자동 저장됩니다.)")
-    
-    session_start_time = time.time()  # 프로그램이 켜진 시작 시간
-    last_checked_time = time.time()
-    last_logged_time = time.time()
-    last_logged_title = None
-    
-    while True:
-        try:
-            current_time_sec = time.time()
-            current_timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-            
-            current_app, current_title = get_active_window_info()
-            
-            # 실시간 시간 누적
-            elapsed_time = current_time_sec - last_checked_time
-            if current_app != "idle" and current_app != "unknown":
-                app_duration_tracker[current_app] = app_duration_tracker.get(current_app, 0) + elapsed_time
-            
-            last_checked_time = current_time_sec
-            
-            # 기록 조건 판단
-            time_since_last_log = current_time_sec - last_logged_time
-            is_window_changed = (current_title != last_logged_title)
-            is_timeout = (time_since_last_log >= 3.0)
-            
-            if is_window_changed or is_timeout:
-                background_apps = get_background_windows(current_app)
-                display_durations = {k: int(v) for k, v in app_duration_tracker.items()}
-                trigger_reason = "window_changed" if is_window_changed else "3sec_interval"
-                
-                log_entry = {
-                    "timestamp": current_timestamp,
-                    "foreground_app": current_app,
-                    "foreground_title": current_title,
-                    "background_apps": background_apps,
-                    "app_accumulated_durations_sec": display_durations,
-                    "source": "laptop",
-                    "trigger": trigger_reason
-                }
-                
-                logs = load_existing_logs()
-                logs.append(log_entry)
-                with open(LOG_FILE, 'w', encoding='utf-8') as f:
-                    json.dump(logs, f, indent=4, ensure_ascii=False)
-                
-                short_title = current_title[:30] + "..." if len(current_title) > 30 else current_title
-                print(f"[{current_timestamp}] [{trigger_reason}] {current_app} ({short_title})")
-                
-                last_logged_title = current_title
-                last_logged_time = current_time_sec
-            
-            time.sleep(0.1)
-            
-        except KeyboardInterrupt:
-            # 사용자가 Ctrl+C를 눌렀을 때 마지막 요약본 기록 호출
-            record_final_summary(session_start_time)
-            break
-        except Exception as e:
-            print(f"에러 발생: {e}")
-            time.sleep(1)
+    print("랩탑 실시간 모니터링 시작... (Ctrl+C: 종료)")
+    session_start_time = time.time()
+    last_checked_time = session_start_time
+    last_logged_time = session_start_time
+    last_logged_window = None
+    last_log_save = time.monotonic()
+    pending_logs = []
+    previous_app, _ = get_active_window_info()
+    runtime_state = {"stop": False, "finalized": False}
+
+    def request_stop(signum, frame):
+        runtime_state["stop"] = True
+
+    def finalize_once():
+        nonlocal last_checked_time
+        if runtime_state["finalized"]:
+            return
+        runtime_state["finalized"] = True
+        final_time = time.time()
+        elapsed_time = max(0.0, final_time - last_checked_time)
+        if previous_app not in {"idle", "unknown"}:
+            app_duration_tracker[previous_app] = app_duration_tracker.get(previous_app, 0.0) + elapsed_time
+        last_checked_time = final_time
+        save_logs(pending_logs, session_start_time, in_progress=False)
+        print("최종 랩탑 로그 저장 완료")
+
+    signal.signal(signal.SIGINT, request_stop)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, request_stop)
+    atexit.register(finalize_once)
+
+    try:
+        while not runtime_state["stop"]:
+            try:
+                current_time = time.time()
+                current_timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                current_app, current_title = get_active_window_info()
+
+                elapsed_time = max(0.0, current_time - last_checked_time)
+                if previous_app not in {"idle", "unknown"}:
+                    app_duration_tracker[previous_app] = app_duration_tracker.get(previous_app, 0.0) + elapsed_time
+                last_checked_time = current_time
+                previous_app = current_app
+
+                current_window = (current_app, current_title)
+                is_window_changed = current_window != last_logged_window
+                is_timeout = current_time - last_logged_time >= 3.0
+                if is_window_changed or is_timeout:
+                    trigger = "window_changed" if is_window_changed else "3sec_interval"
+                    pending_logs.append({
+                        "timestamp": current_timestamp,
+                        "foreground_app": current_app,
+                        "foreground_title": current_title,
+                        "background_apps": get_background_windows(current_app),
+                        "app_accumulated_durations_sec": {
+                            key: int(value) for key, value in app_duration_tracker.items()
+                        },
+                        "source": "laptop",
+                        "trigger": trigger,
+                    })
+                    short_title = current_title[:30] + "..." if len(current_title) > 30 else current_title
+                    print(f"[{current_timestamp}] [{trigger}] {current_app} ({short_title})")
+                    last_logged_window = current_window
+                    last_logged_time = current_time
+
+                now_monotonic = time.monotonic()
+                if now_monotonic - last_log_save >= LOG_SAVE_INTERVAL_SEC:
+                    save_logs(pending_logs, session_start_time, in_progress=True)
+                    pending_logs.clear()
+                    last_log_save = now_monotonic
+
+                time.sleep(0.1)
+            except Exception as error:
+                print(f"랩탑 로거 오류: {error}")
+                time.sleep(1)
+    finally:
+        finalize_once()
+        atexit.unregister(finalize_once)
+
 
 if __name__ == "__main__":
     log_laptop_usage()
