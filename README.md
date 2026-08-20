@@ -1,65 +1,127 @@
 # 거주 공간 내 활동 패턴 분석 시스템
 
-본 프로젝트는 컴퓨터 비전 기술을 활용하여 사용자의 일상 활동을 실시간으로 추적하고, 이를 모바일 및 PC의 디지털 기기 사용 로그와 통합하여 종합적인 라이프스타일 분석 리포트를 제공하는 시스템입니다.
+카메라로 사용자의 자세와 공간 내 행동을 추적하고, PC 및 Android 기기 사용 로그를 함께 수집하여 생활 패턴을 분석하는 캡스톤 프로젝트입니다.
 
-## 주요 기능
-- **실시간 활동 추적:** MediaPipe와 YOLOv8을 활용하여 사용자의 물리적 자세(앉음, 서있음, 누움 등) 및 특정 구역 체류 시간을 실시간으로 인식합니다.
-- **크로스 플랫폼 로그 통합:** 비전 데이터(카메라), PC 앱 사용 기록(윈도우 로거), 모바일 앱 사용 기록(안드로이드 통신)을 초 단위로 동기화하여 병합합니다.
-- **비동기 시각화 및 AI 분석:** 수집된 데이터를 바탕으로 라이프스타일 대시보드(파이/바 차트)를 화면에 띄움과 동시에, 백그라운드에서 로컬 LLM이 즉각적인 행동 분석 코멘트를 생성하여 제공합니다.
+## 현재 구현 기능
+
+- **듀얼 카메라 분석**: 측면 카메라에서 자세를 분류하고, 상단 카메라에서 이동과 구역 체류를 추적합니다.
+- **PC 사용 로그 수집**: 활성 창과 프로그램 사용 기록을 주기적으로 JSON 파일로 저장합니다.
+- **Android 사용 로그 수집**: 포그라운드 서비스로 앱 사용 기록을 수집하고 Flask 서버로 전송합니다.
+- **로그 통합**: 카메라·PC·모바일 로그를 시간 기준으로 병합합니다.
+- **시각화 및 AI 분석**: 병합 로그를 대시보드로 시각화하고 GPT, Gemini, Gemma 또는 Ollama 기반 분석에 활용할 수 있습니다.
 
 ## 기술 스택
-- **언어:** Python, Java, Kotlin
-- **AI/Vision:** YOLOv8, MediaPipe (Human Pose Estimation)
-- **LLM:** Ollama(Local Ai)
-- **Mobile:** Android (Jetpack Compose)
-- **개발 환경:** Git, GitHub, VS Code
+
+- Python, Kotlin
+- OpenCV, MediaPipe, Ultralytics YOLO
+- Flask
+- Android Jetpack Compose
+- Matplotlib
+- OpenAI API, Gemini API, Ollama
 
 ## 프로젝트 구조
+
 ```text
 Capstone-Project/
-├── MobileLog/                    # 모바일 로그 (안드로이드 스튜디오)
-├── README.md                     # 프로젝트 설명서
-├── requirements.txt              # 파이썬 실행을 위한 필수 라이브러리 목록
-├── run_system.py                 # 통합 시스템 전체 실행 진입점 (Main 오케스트라)
-├── src/                          # 핵심 구동 스크립트 폴더
-│   ├── analyze_log_gemini.py     # Gemini API 활용 로그 분석
-│   ├── analyze_log_gpt.py        # GPT API 활용 로그 분석
-│   ├── analyze_log_ollama.py     # Ollama(로컬 AI) 활용 라이프스타일 종합 분석
-│   ├── homecam_live.py           # 홈캠 실시간 영상 처리, 자세 추적 및 로깅 방어 코드
-│   ├── laptop_logger.py          # PC 사용 시간 및 포그라운드/백그라운드 활동 기록기
-│   ├── merge_logs.py             # 다중 소스(모바일, PC, 홈캠) 데이터 시간대별 병합 처리
-│   ├── mobile_server.py          # 안드로이드 앱 통신 및 모바일 로그 수신용 Flask 서버
-│   └── visualize_logs.py         # 병합된 로그 기반 3분할 통합 대시보드 시각화 도구
-├── data/                         # 동적 데이터 및 결과물 저장 폴더 (초기화 및 자동 생성)
-│   ├── *_log.json                # 실시간 수집 및 병합된 각종 JSON 로그 파일
-│   └── dashboard.png             # 최종 생성된 분석 대시보드 스크린샷 이미지
-└── models/                       # AI 모델 파일 폴더
-    └── yolov8n.pt                # YOLOv8 객체 인식 모델 파일
+├── MobileLog/                    # Android 앱
+├── data/                         # 실행 중 생성되는 로그와 분석 결과
+│   ├── camera_log/               # 측면·상단 카메라 로그
+│   ├── laptop_log/               # PC 사용 로그
+│   └── mobile_log/               # Android 앱 사용 로그
+├── models/                       # 모델 파일 보관 폴더
+├── src/
+│   ├── homecam2_side.py          # 측면 카메라 자세 및 행동 분석
+│   ├── homecam2_top.py           # 상단 카메라 이동 및 구역 분석
+│   ├── run_both_cameras.py       # 두 카메라 동시 실행
+│   ├── laptop_logger.py          # PC 사용 로그 수집
+│   ├── mobile_server.py          # 모바일 로그 수신 서버
+│   ├── merge_logs.py             # 카메라·PC·모바일 로그 병합
+│   ├── visualize_logs.py         # 통합 로그 시각화
+│   └── analyze_log_*.py          # LLM 기반 로그 분석
+├── tests/                        # 분류 및 구역 관리 테스트
+├── requirements.txt
+└── README.md
 ```
 
-## 시스템 동작 흐름 (System Pipeline)
+## 설치
 
-본 프로젝트는 데이터 수집부터 AI 분석, 그리고 결과 시각화까지 자동화된 파이프라인으로 구성되어 있습니다. 전체적인 시스템의 동작 과정은 다음과 같습니다.
+Windows와 Python 가상환경 사용을 기준으로 합니다.
+
+```bash
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Android 앱은 `MobileLog` 폴더를 Android Studio에서 열어 빌드합니다. 앱 사용 기록을 수집하려면 기기 설정에서 **사용정보 접근 허용** 권한을 승인해야 합니다.
+
+## 실행 방법
+
+프로젝트 루트(`Capstone-Project`)에서 필요한 수집기를 각각 실행합니다.
+
+### 1. 듀얼 카메라 실행
+
+```bash
+python src/run_both_cameras.py
+```
+
+측면 또는 상단 카메라만 실행하려면 다음 명령을 사용합니다.
+
+```bash
+python src/homecam2_side.py
+python src/homecam2_top.py
+```
+
+카메라 번호, 영상 경로와 구역 좌표는 각 카메라 스크립트의 설정값을 실행 환경에 맞게 조정해야 합니다. 실행 창에서 `q`를 누르면 분석을 종료하고 로그를 저장합니다.
+
+### 2. PC 로그 수집
+
+```bash
+python src/laptop_logger.py
+```
+
+### 3. 모바일 로그 서버 실행
+
+```bash
+python src/mobile_server.py
+```
+
+서버는 기본적으로 `0.0.0.0:5000`에서 요청을 받습니다. Android 앱 화면에서 PC와 같은 네트워크의 서버 주소를 `http://PC_IP:5000` 형식으로 설정합니다. Windows 방화벽에서 5000번 포트의 접근 허용이 필요할 수 있습니다.
+
+### 4. 수집 로그 병합
+
+```bash
+python src/merge_logs.py
+```
+
+병합 결과는 `data/final_log.json`에 저장됩니다.
+
+### 5. 결과 시각화 및 분석
+
+```bash
+python src/visualize_logs.py
+python src/analyze_log_ollama.py
+```
+
+다른 LLM을 사용하려면 해당 `analyze_log_*.py` 파일의 API 설정을 구성한 뒤 실행합니다.
+
+## 데이터 흐름
 
 ```mermaid
-graph TD
-    subgraph Step1 ["1. Data Collection"]
-    A[Mobile App] -->|App Usage Data| D(src/mobile_server.py)
-    B[PC / Laptop] -->|Active Window Logs| E(src/laptop_logger.py)
-    C[Home Camera] -->|Vision & Pose Data| F(src/homecam_live.py)
-    end
-
-    subgraph Step2 ["2. Data Integration"]
-    D -->|mobile_log.json| G{src/merge_logs.py}
-    E -->|laptop_log.json| G
-    F -->|state_log.json| G
-    end
-
-    subgraph Step3 ["3. Visualization & AI Analysis"]
-    G -->|data/final_log.json| H[Asynchronous Processing]
-    H --> I(src/visualize_logs.py)
-    H --> J(src/analyze_log_ollama.py)
-    I --> K((Dashboard UI & PNG))
-    J --> L((AI Feedback Report))
-    end
+flowchart LR
+    S[측면 카메라] --> C[data/camera_log]
+    T[상단 카메라] --> C
+    P[PC 로그 수집기] --> L[data/laptop_log]
+    A[Android 앱] --> M[모바일 수신 서버]
+    M --> D[data/mobile_log]
+    C --> G[merge_logs.py]
+    L --> G
+    D --> G
+    G --> F[data/final_log.json]
+    F --> V[시각화]
+    F --> AI[LLM 분석]
 ```
+
+## Git 관리 참고
+
+학습 데이터, 실행 로그, 모델 가중치와 캐시 파일은 크기가 크거나 다시 생성될 수 있으므로 일반적으로 Git에 포함하지 않습니다. 필요한 설정 파일과 소스 코드만 선택하여 커밋하는 것을 권장합니다.
