@@ -37,6 +37,7 @@ class LogCollectionService : Service() {
 
         private const val CHANNEL_ID = "mobile_log_channel"
         private const val NOTIFICATION_ID = 1001
+        private const val UPLOAD_INTERVAL_MS = 30_000L
         private const val POLL_INTERVAL_MS = 3000L // 0.5초 폴링 → 3초로 완화 (배터리 절약)
     }
 
@@ -79,16 +80,65 @@ class LogCollectionService : Service() {
         sessionStartTime = System.currentTimeMillis()
         lastPollTime = sessionStartTime
         accumulator = SessionAccumulator()
+        serviceScope.launch { LogUploader.notifyServerConnected(this@LogCollectionService) }
 
         monitoringJob = serviceScope.launch {
+            var lastUploadTime = sessionStartTime
             while (isActive) {
                 delay(POLL_INTERVAL_MS)
                 val now = System.currentTimeMillis()
                 // 이벤트 기반 정확 계산: 직전 폴링 이후 ~ 지금까지 구간만 조회
                 eventProcessor.processEvents(lastPollTime, now, accumulator)
                 lastPollTime = now
+                if (now - lastUploadTime >= UPLOAD_INTERVAL_MS) {
+                    val snapshot = eventProcessor.snapshot(now, accumulator)
+                    LogUploader.uploadWithRetry(
+                        this@LogCollectionService,
+                        buildLogPayload(now, snapshot, inProgress = true),
+                    )
+                    lastUploadTime = now
+                }
             }
         }
+    }
+
+    private fun buildLogPayload(now: Long, source: SessionAccumulator, inProgress: Boolean): String {
+        val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.getDefault())
+        val sessionIdFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+        val appsJsonArray = JSONArray()
+        for ((packageName, durationMs) in source.durationsMs) {
+            if (durationMs > 0) {
+                appsJsonArray.put(JSONObject().apply {
+                    put("package", packageName)
+                    put("app_name", appNameResolver.resolve(packageName))
+                    put("total_duration_sec", (durationMs / 1000).toInt())
+                    put("launch_count", source.launchCounts[packageName] ?: 0)
+                })
+            }
+        }
+
+        val timelineJsonArray = JSONArray()
+        for (entry in TimelineCleaner.clean(source.timeline)) {
+            val startEpochMs = entry.getLong("start_epoch_ms")
+            val endEpochMs = entry.getLong("end_epoch_ms")
+            entry.put("start_iso", isoFormat.format(Date(startEpochMs)))
+            entry.put("end_iso", isoFormat.format(Date(endEpochMs)))
+            timelineJsonArray.put(entry)
+        }
+
+        val mobileLogEntry = JSONObject().apply {
+            put("session_id", sessionIdFormat.format(Date(sessionStartTime)))
+            put("source", "mobile")
+            put("session_start_iso", isoFormat.format(Date(sessionStartTime)))
+            put("session_start_epoch_ms", sessionStartTime)
+            put("session_end_iso", isoFormat.format(Date(now)))
+            put("session_end_epoch_ms", now)
+            put("total_monitoring_seconds", ((now - sessionStartTime) / 1000).toInt())
+            put("apps", appsJsonArray)
+            put("timeline", timelineJsonArray)
+            if (inProgress) put("in_progress", true)
+        }
+        return JSONArray().put(mobileLogEntry).toString()
     }
 
     private fun stopMonitoringAndReport() {
@@ -98,6 +148,7 @@ class LogCollectionService : Service() {
         // 마지막 구간 이벤트 반영 + 현재 열려있는 세션(아직 BACKGROUND 안 찍힌 앱) 마감
         eventProcessor.processEvents(lastPollTime, now, accumulator)
         eventProcessor.finalizeOpenSession(now, accumulator)
+        val finalPayload = buildLogPayload(now, accumulator, inProgress = false)
 
         val totalSessionSeconds = ((now - sessionStartTime) / 1000).toInt()
 
@@ -127,6 +178,10 @@ class LogCollectionService : Service() {
         val cleanedTimeline = TimelineCleaner.clean(accumulator.timeline)
         val timelineJsonArray = JSONArray()
         for (entry in cleanedTimeline) {
+            val startEpochMs = entry.getLong("start_epoch_ms")
+            val endEpochMs = entry.getLong("end_epoch_ms")
+            entry.put("start_iso", isoFormat.format(Date(startEpochMs)))
+            entry.put("end_iso", isoFormat.format(Date(endEpochMs)))
             timelineJsonArray.put(entry)
         }
 
@@ -145,7 +200,10 @@ class LogCollectionService : Service() {
         val finalJsonArray = JSONArray().put(mobileLogEntry)
 
         serviceScope.launch {
-            LogUploader.uploadWithRetry(this@LogCollectionService, finalJsonArray.toString())
+            val uploaded = LogUploader.uploadWithRetry(this@LogCollectionService, finalPayload)
+            if (uploaded) {
+                LogUploader.requestServerShutdown(this@LogCollectionService)
+            }
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }

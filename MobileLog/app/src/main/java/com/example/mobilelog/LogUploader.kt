@@ -23,7 +23,7 @@ object LogUploader {
      * 로그 전송 시도. 실패하면 로컬 큐에 저장해두고, 성공하면
      * 그동안 밀려있던 큐도 함께 비우기를 시도한다.
      */
-    suspend fun uploadWithRetry(context: Context, jsonPayload: String) {
+    suspend fun uploadWithRetry(context: Context, jsonPayload: String): Boolean {
         val sent = trySend(context, jsonPayload)
         if (!sent) {
             enqueue(context, jsonPayload)
@@ -31,7 +31,46 @@ object LogUploader {
         } else {
             flushQueue(context)
         }
+        return sent
     }
+
+    suspend fun requestServerShutdown(context: Context): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val connection = URL(AppConfig.getShutdownEndpoint(context)).openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("X-Shutdown-Token", AppConfig.SHUTDOWN_TOKEN)
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
+                connection.doOutput = true
+                connection.outputStream.use { it.write(ByteArray(0)) }
+                val success = connection.responseCode == HttpURLConnection.HTTP_OK
+                connection.disconnect()
+                success
+            } catch (error: Exception) {
+                Log.e(TAG, "서버 종료 요청 실패: ${error.message}")
+                false
+            }
+        }
+
+    suspend fun notifyServerConnected(context: Context): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val connection = URL(AppConfig.getConnectEndpoint(context)).openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("X-Shutdown-Token", AppConfig.SHUTDOWN_TOKEN)
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
+                connection.doOutput = true
+                connection.outputStream.use { it.write(ByteArray(0)) }
+                val success = connection.responseCode == HttpURLConnection.HTTP_OK
+                connection.disconnect()
+                success
+            } catch (error: Exception) {
+                Log.e(TAG, "서버 연결 확인 실패: ${error.message}")
+                false
+            }
+        }
 
     /**
      * 큐에 남아있는 실패 로그들을 순서대로 재전송 시도.

@@ -120,7 +120,7 @@ class MainActivity : ComponentActivity() {
                 }
             } else {
                 Button(onClick = onStopClick) {
-                    Text(text = "⏹️ 모니터링 종료 및 최종 리포트 출력")
+                    Text(text = "분석 종료")
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(text = "⏳ 백그라운드에서도 계속 수집 중 (알림 확인)", color = MaterialTheme.colorScheme.primary)

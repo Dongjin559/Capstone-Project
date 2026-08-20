@@ -82,6 +82,27 @@ class UsageEventProcessor(private val context: Context) {
         closeCurrentSession(now, acc)
     }
 
+    fun snapshot(now: Long, acc: SessionAccumulator): SessionAccumulator {
+        val copy = SessionAccumulator()
+        copy.durationsMs.putAll(acc.durationsMs)
+        copy.launchCounts.putAll(acc.launchCounts)
+        copy.timeline.addAll(acc.timeline.map { JSONObject(it.toString()) })
+
+        val app = currentForegroundApp
+        val elapsed = now - foregroundStartTimestamp
+        if (app != null && elapsed > 0) {
+            copy.durationsMs[app] = (copy.durationsMs[app] ?: 0L) + elapsed
+            copy.timeline.add(JSONObject().apply {
+                put("package", app)
+                put("app_name", appNameResolver.resolve(app))
+                put("start_epoch_ms", foregroundStartTimestamp)
+                put("end_epoch_ms", now)
+                put("duration_sec", (elapsed / 1000).toInt())
+            })
+        }
+        return copy
+    }
+
     private fun closeCurrentSession(endTime: Long, acc: SessionAccumulator) {
         val app = currentForegroundApp ?: return
         val elapsed = endTime - foregroundStartTimestamp

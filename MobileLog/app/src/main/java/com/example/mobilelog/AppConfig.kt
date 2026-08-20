@@ -15,6 +15,7 @@ object AppConfig {
 
     // 최초 실행 시 기본값 (사용자가 설정 화면에서 언제든 변경 가능)
     private const val DEFAULT_SERVER_URL = "http://192.168.0.229:5000"
+    const val SHUTDOWN_TOKEN = "0f25d7b3b5354e23a863af93dd06f3a4"
 
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -30,5 +31,15 @@ object AppConfig {
     fun getUploadEndpoint(context: Context): String {
         val base = getServerBaseUrl(context).trimEnd('/')
         return "$base/upload_mobile_log"
+    }
+
+    fun getShutdownEndpoint(context: Context): String {
+        val base = getServerBaseUrl(context).trimEnd('/')
+        return "$base/shutdown"
+    }
+
+    fun getConnectEndpoint(context: Context): String {
+        val base = getServerBaseUrl(context).trimEnd('/')
+        return "$base/connect"
     }
 }
